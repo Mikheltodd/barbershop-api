@@ -1,0 +1,193 @@
+1. Creación de Carpeta para la Api
+2. Creación de Carpeta db
+3. Creación de archivo __init__.py
+4. Creación de archivo db_connection.py
+5. Importar paquetes:
+	from sqlalchemy import create_engine
+	from sqlalchemy.ext.declarative import declarative_base
+	from sqlalchemy.orm import sessionmaker
+6. Crear el motor de la base de datos:
+	DATABASE_URL = "postgresql://user:password@host:port/name_db"
+engine = create_engine(DATABASE_URL)
+	db_url = "postgresql://postgres:postgres@localhost:5432/BarberShop"
+engine = create_engine(db_url)
+
+7. Establecer una sesión con la base de datos y crear la funcionalidad para inyectar las dependencias:
+	SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+	def get_db():
+		db = SessionLocal()
+		try:
+			yield db
+		finally:
+			db.close()
+8. Crear el modelo que se usará como base para la creación de las entidades de datos
+	Base = declarative_base()
+	Base.metadata.schema = "barbershop"
+9. Creación de entidades
+
+------------
+customer_db
+------------
+from sqlalchemy import Column, Integer, String
+from db.db_connection import Base, engine
+
+
+class CustomerInDB(Base):
+    __tablename__ = "customers"
+    customer_id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_name = Column(String)
+    customer_status = Column(String)
+    customer_address = Column(String)
+    customer_phone = Column(String)
+    customer_email = Column(String)
+    customer_birthday = Column(String)
+    customer_gender = Column(String)
+    customer_occupation = Column(String)
+
+
+Base.metadata.create_all(bind=engine)
+
+--------------
+appointment_db
+--------------
+from sqlalchemy import Column, ForeignKey,
+from sqlalchemy import Integer, String, DateTime
+import datetime
+from db.db_connection import Base, engine
+
+
+class AppointmentInDB(Base):
+    __tablename__ = "transactions"
+    appointment_id = Column(Integer, primary_key=True, autoincrement=True)
+    appointment_datetime = Column(DateTime, default=datetime.datetime.utcnow)
+    appointment_status = Column(String)
+    customer = Column(String, ForeignKey("customers.customer_id"))
+
+
+Base.metadata.create_all(bind=engine)
+
+
+10. Definición de entidades de datos usando Pydantic:
+
+----------------
+customer_models
+----------------
+
+from pydantic import BaseModel
+
+
+class CustomerIn(BaseModel):
+    customer_name: str
+
+
+class CustomerOut(BaseModel):
+    customer_name: str
+    customer_status: str
+    customer_address: str
+    customer_phone: str
+    customer_email: str
+    customer_birthday: str
+    customer_gender: str
+    customer_occupation: str
+
+    class Config:
+        orm_mode = True
+
+-------------------
+appointment_models
+-------------------
+
+from pydantic import BaseModel
+from datetime import datetime
+
+
+class AppointmentIn(BaseModel):
+    appointment_datetime: datetime
+    appointment_status: str
+    customer: int
+
+
+class AppointmentOut(BaseModel):
+    id: int
+    appointment_datetime: datetime
+    appointment_status: str
+    customer: int
+
+    class Config:
+        orm_mode = True
+
+
+11. Implementación de rutas
+
+-------------------
+customer_router
+-------------------
+from typing import List
+from fastapi import Depends, APIRouter, HTTPException
+from sqlalchemy.orm import Session
+from db.db_connection import get_db
+from db.customer_db import CustomerInDB
+from db.appointment_db import AppointmentInDB
+from models.customer_models import CustomerIn, CustomerOut
+from models.appointment_models import AppointmentIn, AppointmentOut
+
+router = APIRouter()
+
+
+@router.get("/customer/{customer_name}", response_model=CustomerOut)
+async def get_customer(customer_name: str, db: Session = Depends(get_db)):
+    customer_in_db = db.query(CustomerInDB).get(customer_name)
+    if customer_in_db == None:
+        raise HTTPException(status_code=404, detail="El cliente no existe")
+    return customer_in_db
+
+
+-------------------
+appointment_router
+-------------------
+
+from typing import List
+from fastapi import Depends, APIRouter, HTTPException
+from sqlalchemy.orm import Session
+from db.db_connection import get_db
+from db.customer_db import CustomerInDB
+from db.appointment_db import AppointmentInDB
+from models.customer_models import CustomerIn, CustomerOut
+from models.appointment_models import AppointmentIn, AppointmentOut
+
+router = APIRouter()
+
+
+@router.get("/customer/booking/", response_model=AppointmentOut)
+async def book_appointment(appointment_in: AppointmentIn, db: Session = Depends(get_db)):
+    customer_in_db = db.query(CustomerInDB).get(appointment_in.customer)
+    if customer_in_db == None:
+        raise HTTPException(status_code=404, detail="El cliente no existe")
+    appointment_in_db = AppointmentInDB(**appointment_in.dict())
+    db.add(appointment_in_db)
+    db.commit()
+    db.refresh(appointment_in_db)
+
+    return customer_in_db
+
+
+12. Unir rutas
+
+-----------
+main.py
+-----------
+
+from fastapi import Depends, FastAPI
+from routers.customer_router import router as router_customer
+from routers.appointment_router import router as router_appointment
+api = FastAPI()
+api.include_router(router_customer)
+api.include_router(router_appointment)
+
+13. Instalación de paquetes
+
+pip install fastapi
+pip install uvicorn
+pip install SQLAlchemy
+pip install pydantic
+pip install psycopg2
